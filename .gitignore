@@ -1,0 +1,6 @@
+.cscope/
+test
+unrar/unrar
+*.o
+*.so
+*.rar
