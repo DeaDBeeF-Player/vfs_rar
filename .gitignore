@@ -1,6 +1,6 @@
 .cscope/
 test
-unrar/unrar
+unrar/
 *.o
 *.so
 *.rar
