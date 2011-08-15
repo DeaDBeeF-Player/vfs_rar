@@ -31,6 +31,19 @@ typedef struct {
 
 static const char *scheme_names[] = { "rar://", NULL };
 
+void unstore_file(ComprDataIO *dataIO, int64_t size)
+{
+	byte buffer[0x10000];
+	while (1) {
+		uint code = dataIO->UnpRead(buffer, 0x10000);
+		if (code == 0 || (int)code == -1)
+			break;
+		code = min(code, size);
+		dataIO->UnpWrite(buffer, code);
+		if (size >= 0)
+			size -= code;
+	}
+}
 //-----------------------------------------------------------------------------
 
 const char **
@@ -128,7 +141,7 @@ vfs_rar_open (const char *fname)
 	dataIO->SetUnpackToMemory(buffer, arc->NewLhd.FullUnpSize);
 
 	if (arc->NewLhd.Method == 0x30)
-		return 0; // Unstrore the file
+		unstore_file(dataIO, arc->NewLhd.FullUnpSize);
 	else {
 		unp->SetDestSize(arc->NewLhd.FullUnpSize);
 		unp->DoUnpack(arc->NewLhd.UnpVer, (arc->NewLhd.Flags & LHD_SOLID));
