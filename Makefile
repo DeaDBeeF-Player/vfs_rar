@@ -1,5 +1,4 @@
 CPPFLAGS = -c -fPIC -Wall \
-	-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE \
 	-I./ -I./unrar
 LDFLAGS = -shared -fPIC
 DST_OBJS = vfs_rar.o
