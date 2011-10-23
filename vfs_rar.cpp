@@ -81,6 +81,7 @@ vfs_rar_open (const char *fname)
 	fname = colon+1;
 
 	Archive *arc = new Archive();
+	trace("opening rar file: %s\n", rarname);
 	if (!arc->Open(rarname))
 		return NULL;
 
@@ -88,6 +89,7 @@ vfs_rar_open (const char *fname)
 		return NULL;
 
 	// find the desired file from archive
+	trace("searching file %s\n", fname);
 	bool found_file = false;
 	while (arc->ReadHeader() > 0) {
 		int hdr_type = arc->GetHeaderType();
@@ -97,11 +99,12 @@ vfs_rar_open (const char *fname)
 		switch (hdr_type) {
 			case FILE_HEAD:
 				if (!arc->IsArcDir() && !strcmp(arc->NewLhd.FileName, fname)) {
+					trace("file %s found\n", fname);
 					found_file = true;
 				}
 				break;
 
-			defalut:
+			default:
 				break;
 		}
 
@@ -180,7 +183,7 @@ vfs_rar_close (DB_FILE *f)
 size_t
 vfs_rar_read (void *ptr, size_t size, size_t nmemb, DB_FILE *f)
 {
-	trace("[vfs_rar_read]");
+	trace("[vfs_rar_read]\n");
 	rar_file_t *rf = (rar_file_t *)f;
 
 	size_t rb = min(size * nmemb, rf->size - rf->offset);
@@ -284,7 +287,7 @@ vfs_rar_scandir (
 					fname_list.push_back(string(arc.NewLhd.FileName));
 				break;
 
-			defalut:
+			default:
 				break;
 		}
 
@@ -332,8 +335,23 @@ vfs_rar_load (DB_functions_t *api)
 	plugin.plugin.copyright =
 		"Copyright (C) 2011 Shao Hao <shaohao@users.sourceforge.net>\n"
 		"\n"
-		"UnRAR library follows UnRAR's License";
-	plugin.plugin.website = "http://deadbeef.sf.net";
+		"This program is free software; you can redistribute it and/or\n"
+		"modify it under the terms of the GNU General Public License\n"
+		"as published by the Free Software Foundation; either version 2\n"
+		"of the License, or (at your option) any later version.\n"
+		"\n"
+		"This program is distributed in the hope that it will be useful,\n"
+		"but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
+		"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
+		"GNU General Public License for more details.\n"
+		"\n"
+		"You should have received a copy of the GNU General Public License\n"
+		"along with this program; if not, write to the Free Software\n"
+		"Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.\n"
+		"\n"
+		"\n"
+		"UnRAR source (C) Alexander RoshalUnRAR";
+	plugin.plugin.website = "http://github.com/shaohao/vfs_rar";
 	plugin.open = vfs_rar_open;
 	plugin.close = vfs_rar_close;
 	plugin.read = vfs_rar_read;
