@@ -1,7 +1,12 @@
-CPPFLAGS = -c -fPIC -Wall \
-	-I./ -I./unrar
+NAME=vfs_rar
+ifeq ($(DEBUG),1)
+CPPFLAGS = -g -c -fPIC -Wall -DDEBUG
+else
+CPPFLAGS = -c -fPIC -Wall
+endif
+CPPFLAGS += -I./ -I./unrar
 LDFLAGS = -shared -fPIC
-DST_OBJS = vfs_rar.o
+DST_OBJS = $(NAME).o
 RARLIB_OBJS =  $(addprefix unrar/, \
 	strlist.o \
 	strfn.o \
@@ -30,6 +35,7 @@ RARLIB_OBJS =  $(addprefix unrar/, \
 	ulinks.o \
 	errhnd.o \
 	rarvm.o \
+	secpassword.o \
 	rijndael.o \
 	getbits.o \
 	sha1.o \
@@ -43,15 +49,15 @@ RARLIB_OBJS =  $(addprefix unrar/, \
 	recvol.o scantree.o rs.o filestr.o \
 )
 
-vfs_rar.so: $(RARLIB_OBJS) $(DST_OBJS)
+$(NAME).so: $(RARLIB_OBJS) $(DST_OBJS)
 	g++ $(LDFLAGS) $^ -o $@
 
 install:
 	-mkdir -p ~/.local/lib/deadbeef
-	-cp vfs_rar.so ~/.local/lib/deadbeef
+	-cp $(NAME).so ~/.local/lib/deadbeef
 
 uninstall:
-	-rm -rf ~/.local/lib/deadbeef/vfs_rar.so
+	-rm -rf ~/.local/lib/deadbeef/$(NAME).so
 
 clean:
 	-rm -rf *.so *.o unrar/*.o

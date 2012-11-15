@@ -8,8 +8,11 @@ using namespace std;
 
 //-----------------------------------------------------------------------------
 
-//#define trace(...) { fprintf(stderr, __VA_ARGS__); }
+#ifdef DEBUG
+#define trace(...) { fprintf(stderr, __VA_ARGS__); }
+#else
 #define trace(fmt,...)
+#endif
 
 #define min(x,y) ((x)<(y)?(x):(y))
 
@@ -25,7 +28,7 @@ typedef struct {
 	byte *buffer;
 	size_t buffer_size;
 
-	int64_t offset;
+	int64_t tell;
 	int64_t size;
 } rar_file_t;
 
@@ -122,7 +125,9 @@ vfs_rar_open (const char *fname)
 	// Initialize the ComprDataIO and Unpack
 	ComprDataIO *dataIO = new ComprDataIO();
 	Unpack *unp = new Unpack(dataIO);
-	unp->Init(NULL);
+	unp->Init();
+	SecPassword secpwd;
+	secpwd.Set(L"");
 
 	dataIO->CurUnpRead = 0;
 	dataIO->CurUnpWrite = 0;
@@ -131,7 +136,7 @@ vfs_rar_open (const char *fname)
 
 	dataIO->SetEncryption(
 		(arc->NewLhd.Flags & LHD_PASSWORD) ? arc->NewLhd.UnpVer : 0,
-		L"",
+		&secpwd,
 		(arc->NewLhd.Flags & LHD_SALT) ? arc->NewLhd.Salt : NULL,
 		false,
 		arc->NewLhd.UnpVer >= 36
@@ -157,7 +162,7 @@ vfs_rar_open (const char *fname)
 	f->dataIO = dataIO;
 	f->unp = unp;
 	f->buffer = buffer;
-	f->offset = 0;
+	f->tell = 0;
 	f->size = arc->NewLhd.FullUnpSize;
 
 	return (DB_FILE*)f;
@@ -186,13 +191,13 @@ vfs_rar_read (void *ptr, size_t size, size_t nmemb, DB_FILE *f)
 	trace("[vfs_rar_read]\n");
 	rar_file_t *rf = (rar_file_t *)f;
 
-	size_t rb = min(size * nmemb, rf->size - rf->offset);
+	size_t rb = min((int64_t)(size * nmemb), rf->size - rf->tell);
 	if (rb) {
-		memcpy(ptr, rf->buffer + rf->offset, rb);
-		rf->offset += rb;
+		memcpy(ptr, rf->buffer + rf->tell, rb);
+		rf->tell += rb;
 	}
 
-	return rb / size;
+	return (rb/size);
 }
 
 int
@@ -202,32 +207,32 @@ vfs_rar_seek (DB_FILE *f, int64_t offset, int whence)
 	rar_file_t *rf = (rar_file_t *)f;
 
 	if (whence == SEEK_CUR) {
-		offset = rf->offset + offset;
+		offset += rf->tell;
 	}
 	else if (whence == SEEK_END) {
-		offset = rf->size + offset;
+		offset += rf->size;
 	}
 
-	rf->offset = offset;
+	rf->tell = offset;
 	return 0;
 #if 0
 	// reopen when seeking back
-	if (offset < rf->offset) {
+	if (offset < rf->tell) {
 		rf->arc->Seek(
 			rf->arc->NextBlockPos - rf->arc->NewLhd.FullPackSize,
 			SEEK_SET
 		);
-		rf->offset = 0;
+		rf->tell = 0;
 	}
 
 	unsigned char buf[4096];
-	int64_t n = offset - rf->offset;
+	int64_t n = offset - rf->tell;
 	while (n > 0) {
 		int sz = min (n, sizeof (buf));
 		size_t rb = read_unpacked_data(rf, buf, sz);
 		n -= rb;
 		assert (n >= 0);
-		rf->offset += rb;
+		rf->tell += rb;
 		if (rb != sz) {
 			break;
 		}
@@ -241,14 +246,14 @@ int64_t
 vfs_rar_tell (DB_FILE *f)
 {
 	rar_file_t *rf = (rar_file_t *)f;
-	return rf->offset;
+	return rf->tell;
 }
 
 void
 vfs_rar_rewind (DB_FILE *f)
 {
 	rar_file_t *rf = (rar_file_t *)f;
-	rf->offset = 0;
+	rf->tell = 0;
 }
 
 int64_t
@@ -327,7 +332,7 @@ vfs_rar_load (DB_functions_t *api)
 	plugin.plugin.api_vmajor = 1;
 	plugin.plugin.api_vminor = 0;
 	plugin.plugin.version_major = 1;
-	plugin.plugin.version_minor = 0;
+	plugin.plugin.version_minor = 1;
 	plugin.plugin.type = DB_PLUGIN_VFS;
 	plugin.plugin.id = "vfs_rar";
 	plugin.plugin.name = "RAR vfs";
