@@ -28,7 +28,7 @@ typedef struct {
 	byte *buffer;
 	size_t buffer_size;
 
-	int64_t tell;
+	int64_t offset;
 	int64_t size;
 } rar_file_t;
 
@@ -155,17 +155,17 @@ vfs_rar_open (const char *fname)
 		unp->DoUnpack(arc->NewLhd.UnpVer, (arc->NewLhd.Flags & LHD_SOLID));
 	}
 
-	rar_file_t *f = (rar_file_t *)malloc (sizeof (rar_file_t));
-	memset (f, 0, sizeof (rar_file_t));
-	f->file.vfs = &plugin;
-	f->arc = arc;
-	f->dataIO = dataIO;
-	f->unp = unp;
-	f->buffer = buffer;
-	f->tell = 0;
-	f->size = arc->NewLhd.FullUnpSize;
+	rar_file_t *rf = (rar_file_t *)malloc (sizeof (rar_file_t));
+	memset (rf, 0, sizeof (rar_file_t));
+	rf->file.vfs = &plugin;
+	rf->arc = arc;
+	rf->dataIO = dataIO;
+	rf->unp = unp;
+	rf->buffer = buffer;
+	rf->offset = 0;
+	rf->size = arc->NewLhd.FullUnpSize;
 
-	return (DB_FILE*)f;
+	return (DB_FILE*)rf;
 }
 
 void
@@ -191,11 +191,9 @@ vfs_rar_read (void *ptr, size_t size, size_t nmemb, DB_FILE *f)
 	trace("[vfs_rar_read]\n");
 	rar_file_t *rf = (rar_file_t *)f;
 
-	size_t rb = min((int64_t)(size * nmemb), rf->size - rf->tell);
-	if (rb) {
-		memcpy(ptr, rf->buffer + rf->tell, rb);
-		rf->tell += rb;
-	}
+	size_t rb = min((int64_t)(size * nmemb), (rf->size - rf->offset));
+	memcpy(ptr, rf->buffer + rf->offset, rb);
+	rf->offset += rb;
 
 	return (rb/size);
 }
@@ -207,32 +205,35 @@ vfs_rar_seek (DB_FILE *f, int64_t offset, int whence)
 	rar_file_t *rf = (rar_file_t *)f;
 
 	if (whence == SEEK_CUR) {
-		offset += rf->tell;
+		offset = rf->offset + offset;
 	}
 	else if (whence == SEEK_END) {
-		offset += rf->size;
+		offset = rf->size + offset;
 	}
 
-	rf->tell = offset;
+	if (offset < 0 || offset > rf->size)
+		return -1;
+
+	rf->offset = offset;
 	return 0;
 #if 0
 	// reopen when seeking back
-	if (offset < rf->tell) {
+	if (offset < rf->offset) {
 		rf->arc->Seek(
 			rf->arc->NextBlockPos - rf->arc->NewLhd.FullPackSize,
 			SEEK_SET
 		);
-		rf->tell = 0;
+		rf->offset = 0;
 	}
 
 	unsigned char buf[4096];
-	int64_t n = offset - rf->tell;
+	int64_t n = offset - rf->offset;
 	while (n > 0) {
 		int sz = min (n, sizeof (buf));
 		size_t rb = read_unpacked_data(rf, buf, sz);
 		n -= rb;
 		assert (n >= 0);
-		rf->tell += rb;
+		rf->offset += rb;
 		if (rb != sz) {
 			break;
 		}
@@ -246,14 +247,14 @@ int64_t
 vfs_rar_tell (DB_FILE *f)
 {
 	rar_file_t *rf = (rar_file_t *)f;
-	return rf->tell;
+	return rf->offset;
 }
 
 void
 vfs_rar_rewind (DB_FILE *f)
 {
 	rar_file_t *rf = (rar_file_t *)f;
-	rf->tell = 0;
+	rf->offset = 0;
 }
 
 int64_t

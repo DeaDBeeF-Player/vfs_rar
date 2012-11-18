@@ -52,7 +52,7 @@ RARLIB_OBJS =  $(addprefix unrar/, \
 $(NAME).so: $(RARLIB_OBJS) $(DST_OBJS)
 	g++ $(LDFLAGS) $^ -o $@
 
-install:
+install: $(NAME).so
 	-mkdir -p ~/.local/lib/deadbeef
 	-cp $(NAME).so ~/.local/lib/deadbeef
 
@@ -60,5 +60,8 @@ uninstall:
 	-rm -rf ~/.local/lib/deadbeef/$(NAME).so
 
 clean:
-	-rm -rf *.so *.o unrar/*.o
+	-rm -rf *.so *.o
+
+clean_all: clean
+	-rm -rf unrar/*.o
 
