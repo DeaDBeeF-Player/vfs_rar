@@ -1,4 +1,6 @@
-NAME=vfs_rar
+DEBUG = 0
+CC = gcc
+NAME = vfs_rar
 ifeq ($(DEBUG),1)
 CPPFLAGS = -g -c -fPIC -Wall -DDEBUG
 else
