@@ -3,8 +3,10 @@
 #include <string>
 using namespace std;
 
+#include <deadbeef/deadbeef.h>
 #include "unrar/rar.hpp"
-#include "vfs_rar.hpp"
+
+#include <wchar.h>
 
 //-----------------------------------------------------------------------------
 
@@ -47,6 +49,7 @@ void unstore_file(ComprDataIO *dataIO, int64_t size)
 			size -= code;
 	}
 }
+
 //-----------------------------------------------------------------------------
 
 const char **
@@ -71,7 +74,7 @@ vfs_rar_open (const char *fname)
 
 	// get the full path of .rar file
 	fname += 6;
-	const char *colon = strchr (fname, ':');
+	const char *colon = strchr(fname, ':');
 	if (!colon) {
 		return NULL;
 	}
@@ -83,9 +86,15 @@ vfs_rar_open (const char *fname)
 	// get the compressed file in this archive
 	fname = colon+1;
 
+	wchar_t wrarname[NM];
+	UtfToWide(rarname, wrarname, ASIZE(wrarname)-1);
+
+	wchar_t wfname[NM];
+	UtfToWide(fname, wfname, ASIZE(wfname)-1);
+
 	Archive *arc = new Archive();
 	trace("opening rar file: %s\n", rarname);
-	if (!arc->Open(rarname))
+	if (!arc->WOpen(wrarname))
 		return NULL;
 
 	if (!arc->IsArchive(true))
@@ -96,19 +105,23 @@ vfs_rar_open (const char *fname)
 	bool found_file = false;
 	while (arc->ReadHeader() > 0) {
 		int hdr_type = arc->GetHeaderType();
-		if (hdr_type == ENDARC_HEAD)
+		if (hdr_type == HEAD_ENDARC)
 			break;
-	
+
 		switch (hdr_type) {
-			case FILE_HEAD:
-				if (!arc->IsArcDir() && !strcmp(arc->NewLhd.FileName, fname)) {
+		case HEAD_FILE:
+			if (!arc->IsArcDir()) {
+				wchar_t warcfn[NM];
+				ConvertPath(arc->FileHead.FileName, warcfn);
+				if (!wcscmp(warcfn, wfname)) {
 					trace("file %s found\n", fname);
 					found_file = true;
 				}
-				break;
+			}
+			break;
 
-			default:
-				break;
+		default:
+			break;
 		}
 
 		if (found_file)
@@ -120,39 +133,48 @@ vfs_rar_open (const char *fname)
 		return NULL;
 
 	// Seek to head of the file
-	arc->Seek(arc->NextBlockPos - arc->NewLhd.FullPackSize, SEEK_SET);
+	arc->Seek(arc->NextBlockPos - arc->FileHead.PackSize, SEEK_SET);
 
 	// Initialize the ComprDataIO and Unpack
 	ComprDataIO *dataIO = new ComprDataIO();
 	Unpack *unp = new Unpack(dataIO);
-	unp->Init();
 	SecPassword secpwd;
-	secpwd.Set(L"");
+
+	byte pswcheck[SIZE_PSWCHECK];
+	dataIO->SetEncryption(
+		false,
+		arc->FileHead.CryptMethod,
+		&secpwd,
+		arc->FileHead.SaltSet ? arc->FileHead.Salt : NULL,
+		arc->FileHead.InitV,
+		arc->FileHead.Lg2Count,
+		pswcheck,
+		arc->FileHead.HashKey
+	);
 
 	dataIO->CurUnpRead = 0;
 	dataIO->CurUnpWrite = 0;
-	dataIO->UnpFileCRC = arc->OldFormat ? 0 : 0xFFFFFFFF;
-	dataIO->PackedCRC = 0xFFFFFFFF;
+	dataIO->UnpHash.Init(arc->FileHead.FileHash.Type, 1);
+	dataIO->PackedDataHash.Init(arc->FileHead.FileHash.Type, 1);
+	dataIO->SetPackedSizeToRead(arc->FileHead.PackSize);
+	dataIO->SetTestMode(true);
+	dataIO->SetSkipUnpCRC(true);
 
-	dataIO->SetEncryption(
-		(arc->NewLhd.Flags & LHD_PASSWORD) ? arc->NewLhd.UnpVer : 0,
-		&secpwd,
-		(arc->NewLhd.Flags & LHD_SALT) ? arc->NewLhd.Salt : NULL,
-		false,
-		arc->NewLhd.UnpVer >= 36
-	);
-	dataIO->SetPackedSizeToRead(arc->NewLhd.FullPackSize);
 	dataIO->SetFiles(arc, NULL); // we unpack data to memory
 
 	// Unpack the full file into memory
-	byte *buffer = (byte *)malloc(arc->NewLhd.FullUnpSize);
-	dataIO->SetUnpackToMemory(buffer, arc->NewLhd.FullUnpSize);
+	byte *buffer = (byte *)malloc(arc->FileHead.UnpSize);
+	dataIO->SetUnpackToMemory(buffer, arc->FileHead.UnpSize);
 
-	if (arc->NewLhd.Method == 0x30)
-		unstore_file(dataIO, arc->NewLhd.FullUnpSize);
+	if (arc->FileHead.Method == 0)
+		unstore_file(dataIO, arc->FileHead.UnpSize);
 	else {
-		unp->SetDestSize(arc->NewLhd.FullUnpSize);
-		unp->DoUnpack(arc->NewLhd.UnpVer, (arc->NewLhd.Flags & LHD_SOLID));
+		unp->Init(arc->FileHead.WinSize, arc->FileHead.Solid);
+		unp->SetDestSize(arc->FileHead.UnpSize);
+		if (arc->Format != RARFMT50 && arc->FileHead.UnpVer <= 15)
+			unp->DoUnpack(15, arc->Solid);
+		else
+			unp->DoUnpack(arc->FileHead.UnpVer, arc->FileHead.Solid);
 	}
 
 	rar_file_t *rf = (rar_file_t *)malloc (sizeof (rar_file_t));
@@ -163,7 +185,7 @@ vfs_rar_open (const char *fname)
 	rf->unp = unp;
 	rf->buffer = buffer;
 	rf->offset = 0;
-	rf->size = arc->NewLhd.FullUnpSize;
+	rf->size = arc->FileHead.UnpSize;
 
 	return (DB_FILE*)rf;
 }
@@ -275,7 +297,10 @@ vfs_rar_scandir (
 	vector<string> fname_list;
 	Archive arc;
 
-	if (!arc.Open(dir))
+	wchar_t wdir[NM];
+	UtfToWide(dir, wdir, ASIZE(wdir)-1);
+
+	if (!arc.WOpen(wdir))
 		return -1;
 
 	if (!arc.IsArchive(true))
@@ -284,17 +309,20 @@ vfs_rar_scandir (
 	// read files from archive
 	while (arc.ReadHeader() > 0) {
 		int hdr_type = arc.GetHeaderType();
-		if (hdr_type == ENDARC_HEAD)
+		if (hdr_type == HEAD_ENDARC)
 			break;
 	
 		switch (hdr_type) {
-			case FILE_HEAD:
-				if (!arc.IsArcDir())
-					fname_list.push_back(string(arc.NewLhd.FileName));
-				break;
+		case HEAD_FILE:
+			if (!arc.IsArcDir()) {
+				char fname[wcslen(arc.FileHead.FileName)*2];
+				WideToUtf(arc.FileHead.FileName, fname, ASIZE(fname));
+				fname_list.push_back(string(fname));
+			}
+			break;
 
-			default:
-				break;
+		default:
+			break;
 		}
 
 		arc.SeekToNext();
@@ -306,6 +334,7 @@ vfs_rar_scandir (
 	for (int i = 0; i < n; i++) {
 		(*namelist)[i] = (dirent *)malloc (sizeof(struct dirent));
 		memset ((*namelist)[i], 0, sizeof(struct dirent));
+		//snprintf(
 		snprintf(
 			(*namelist)[i]->d_name, sizeof((*namelist)[i]->d_name),
 			"rar://%s:%s", dir, fname_list[i].c_str()
@@ -333,7 +362,7 @@ vfs_rar_load (DB_functions_t *api)
 	plugin.plugin.api_vmajor = 1;
 	plugin.plugin.api_vminor = 0;
 	plugin.plugin.version_major = 1;
-	plugin.plugin.version_minor = 1;
+	plugin.plugin.version_minor = 8;
 	plugin.plugin.type = DB_PLUGIN_VFS;
 	plugin.plugin.id = "vfs_rar";
 	plugin.plugin.name = "RAR vfs";

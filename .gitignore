@@ -1,6 +1,8 @@
 .cscope/
 test
 unrar/
+.objs/
+.deps/
 *.o
 *.so
 *.rar
