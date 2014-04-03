@@ -6,8 +6,6 @@ using namespace std;
 #include <deadbeef/deadbeef.h>
 #include "unrar/rar.hpp"
 
-#include <wchar.h>
-
 //-----------------------------------------------------------------------------
 
 #ifdef DEBUG
@@ -64,7 +62,7 @@ vfs_rar_is_streaming (void)
 	return 0;
 }
 
-// fname must have form of zip://full_filepath.zip:full_filepath_in_zip
+// fname must have form of rar://full_filepath.rar:full_filepath_in_rar
 DB_FILE*
 vfs_rar_open (const char *fname)
 {

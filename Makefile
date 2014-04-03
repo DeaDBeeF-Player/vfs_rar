@@ -69,7 +69,8 @@ UNRAR_OBJS += strlist.o \
 	      headers.o \
 	      threadpool.o \
 	      rs16.o \
-	      cmddata.o
+	      cmddata.o \
+	      ui.o
 
 OBJS = $(UNRAR_OBJS) $(APP).o
 
