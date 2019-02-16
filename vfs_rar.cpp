@@ -292,6 +292,7 @@ vfs_rar_scandir (
 	int (*cmp) (const struct dirent **, const struct dirent **)
 )
 {
+	trace ("vfs_rar_scandir: %s\n", dir);
 	vector<string> fname_list;
 	Archive arc;
 
@@ -309,7 +310,7 @@ vfs_rar_scandir (
 		int hdr_type = arc.GetHeaderType();
 		if (hdr_type == HEAD_ENDARC)
 			break;
-	
+
 		switch (hdr_type) {
 		case HEAD_FILE:
 			if (!arc.IsArcDir()) {
@@ -327,19 +328,24 @@ vfs_rar_scandir (
 	}
 
 	// transmit files to player
-	int n = fname_list.size();
-	*namelist = (dirent **)malloc (sizeof(void *) * n);
+	int num_files = 0;
+	const int n = fname_list.size();
+	*namelist = (dirent **)malloc(sizeof(void *) * n);
 	for (int i = 0; i < n; i++) {
-		(*namelist)[i] = (dirent *)malloc (sizeof(struct dirent));
-		memset ((*namelist)[i], 0, sizeof(struct dirent));
-		//snprintf(
-		snprintf(
-			(*namelist)[i]->d_name, sizeof((*namelist)[i]->d_name),
-			"rar://%s:%s", dir, fname_list[i].c_str()
-		);
+		const char *nm = fname_list[i].c_str();
+		struct dirent entry;
+		strncpy(entry.d_name, nm, sizeof(entry.d_name)-1);
+		entry.d_name[sizeof(entry.d_name)-1] = '\0';
+		if (!selector || selector && selector(&entry)) {
+			(*namelist)[num_files] = (dirent *)calloc(1, sizeof(struct dirent));
+			strcpy((*namelist)[num_files]->d_name, entry.d_name);
+			num_files++;
+			trace("vfs_rar: %s\n", nm);
+		}
 	}
 
-	return n;
+	trace ("vfs_rar: scandir done\n");
+	return num_files;
 }
 
 int
@@ -351,16 +357,21 @@ vfs_rar_is_container (const char *fname)
 	return 0;
 }
 
+const char *
+vfs_rar_get_scheme_for_name (const char *fname) {
+    return scheme_names[0];
+}
+
 extern "C"
 DB_plugin_t *
 vfs_rar_load (DB_functions_t *api)
 {
 	deadbeef = api;
 
-	plugin.plugin.api_vmajor = 1;
-	plugin.plugin.api_vminor = 0;
+	plugin.plugin.api_vmajor = DB_API_VERSION_MAJOR;
+	plugin.plugin.api_vminor = DB_API_VERSION_MINOR;
 	plugin.plugin.version_major = 1;
-	plugin.plugin.version_minor = 9;
+	plugin.plugin.version_minor = 10;
 	plugin.plugin.type = DB_PLUGIN_VFS;
 	plugin.plugin.id = "vfs_rar";
 	plugin.plugin.name = "RAR vfs";
@@ -402,7 +413,7 @@ vfs_rar_load (DB_functions_t *api)
 	plugin.is_streaming = vfs_rar_is_streaming;
 	plugin.is_container = vfs_rar_is_container;
 	plugin.scandir = vfs_rar_scandir;
+	plugin.get_scheme_for_name = vfs_rar_get_scheme_for_name;
 
 	return DB_PLUGIN(&plugin);
 }
-
