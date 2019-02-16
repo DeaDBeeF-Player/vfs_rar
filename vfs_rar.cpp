@@ -110,7 +110,7 @@ vfs_rar_open (const char *fname)
 		case HEAD_FILE:
 			if (!arc->IsArcDir()) {
 				wchar_t warcfn[NM];
-				ConvertPath(arc->FileHead.FileName, warcfn);
+				ConvertPath(arc->FileHead.FileName, warcfn, NM);
 				if (!wcscmp(warcfn, wfname)) {
 					trace("file %s found\n", fname);
 					found_file = true;
