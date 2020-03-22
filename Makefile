@@ -7,7 +7,6 @@ DEPDIR = .deps
 UNRARDIR = unrar
 
 CXX ?= g++
-STRIP = strip
 
 CXXFLAGS += -fPIC
 CXXFLAGS += -Wall \
@@ -81,9 +80,6 @@ all: $(BIN)
 
 $(BIN): $(addprefix $(OBJDIR)/,$(OBJS))
 	$(CXX) -shared $(CXXFLAGS) -o $@ $^ $(CXX_LDFLAGS) $(LDFLAGS)
-ifneq ($(DEBUG),1)
-	$(STRIP) $@
-endif
 
 vpath %.o $(OBJDIR)
 $(OBJDIR)/%.o: %.cpp | $(OBJDIR)
