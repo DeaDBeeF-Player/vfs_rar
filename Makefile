@@ -22,6 +22,9 @@ CXXFLAGS += -g -DDEBUG
 endif
 
 LDFLAGS = -pthread
+ifeq ($(OS),Windows_NT)
+       LDFLAGS += -lpowrprof
+endif
 
 BIN = $(APP).so
 
